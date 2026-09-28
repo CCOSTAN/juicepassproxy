@@ -56,6 +56,13 @@ if [[ ! -z "${MQTT_USER}" ]]; then
   logger INFO "MQTT_USER: ${MQTT_USER}"
   JPP_STRING+=" --mqtt_user ${MQTT_USER}"
 fi
+if [[ ! -z "${MQTT_PASS_FILE}" ]]; then
+  if [[ ! -r "${MQTT_PASS_FILE}" ]]; then
+    logger ERROR "MQTT_PASS_FILE is not readable"
+    exit 2
+  fi
+  MQTT_PASS="$(<"${MQTT_PASS_FILE}")"
+fi
 if [[ ! -z "${MQTT_PASS}" ]]; then
   logger INFO "MQTT_PASS: $(echo ${MQTT_PASS} | sed -E 's/./*/g')"
   JPP_STRING+=" --mqtt_password ${MQTT_PASS}"
@@ -100,6 +107,18 @@ if [[ -v EXPERIMENTAL ]] && $EXPERIMENTAL; then
   logger INFO "EXPERIMENTAL: true"
 else
   logger INFO "EXPERIMENTAL: false"
+fi
+if [[ -v READ_ONLY ]] && $READ_ONLY; then
+  JPP_STRING+=" --read_only"
+  logger INFO "READ_ONLY: true"
+else
+  logger INFO "READ_ONLY: false"
+fi
+if [[ -v PASSIVE_MONITOR ]] && $PASSIVE_MONITOR; then
+  JPP_STRING+=" --passive_monitor"
+  logger INFO "PASSIVE_MONITOR: true"
+else
+  logger INFO "PASSIVE_MONITOR: false"
 fi
 
 logger DEBUG "COMMAND: $(echo ${JPP_STRING} | sed -E 's/(.* --mqtt_password )([\"]?[a-zA-Z0-9_\?\*\^\&\#\@\!]+[\"]?)/\1*****/g')"

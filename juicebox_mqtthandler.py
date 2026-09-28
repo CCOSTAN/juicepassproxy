@@ -41,6 +41,7 @@ class JuiceboxMQTTEntity:
             }
         )
         self.experimental = self._kwargs.get("experimental", False)
+        self.read_only = self._kwargs.get("read_only", False)
         self._unique_id = f"{self._kwargs.get('juicebox_id', None)} {self.name}"
         self._mitm_handler = self._kwargs.get("mitm_handler", None)
         self._add_error = self._kwargs.get("add_error_func", None)
@@ -66,6 +67,11 @@ class JuiceboxMQTTEntity:
             )
         )
 
+        # Read-only monitoring should advertise every sensor immediately while
+        # leaving its state empty until the charger reports a real value.
+        if self.read_only and self.entity_type == "sensor":
+            self._mqtt.write_config()
+
         if self._kwargs.get("initial_state", None) is not None:
             await self.set(self._kwargs.get("initial_state", None))
 
@@ -78,6 +84,8 @@ class JuiceboxMQTTEntity:
 
     async def set(self, state=None):
         self._state = state
+        if self.read_only and self.entity_type in MQTT_SENDING_ENTITIES:
+            return
         try:
             if self.entity_type == 'number':
                 # float to be used by any number, JuiceboxMessage will use int
@@ -162,6 +170,9 @@ class JuiceboxMQTTSendingEntity(JuiceboxMQTTEntity):
         Likely, this callback will either need to be built out to build a working
         CMD or the callback will call a method that builds a working CMD.
         """
+        if self.read_only:
+            _LOGGER.warning(f"Ignoring command callback for {self.name} in read-only mode")
+            return
         state = message.payload.decode()
         _LOGGER.info(
             f"{self.entity_type.title()} Callback ({self.name}): "
@@ -255,6 +266,7 @@ class JuiceboxMQTTHandler:
         juicebox_id=None,
         mitm_handler=None,
         loglevel=None,
+        read_only=False,
     ):
         if loglevel is not None:
             _LOGGER.setLevel(loglevel)
@@ -262,6 +274,7 @@ class JuiceboxMQTTHandler:
         self._device_name = device_name
         self._juicebox_id = juicebox_id
         self._experimental = experimental
+        self._read_only = read_only
         self._config = config
         self._mitm_handler = mitm_handler
         # Try to use first the MAX_CURRENT as maximum, if not found use the previous run current_rating or default of 48 which is safe and not so big
@@ -269,6 +282,7 @@ class JuiceboxMQTTHandler:
         _LOGGER.info(f"max_current: {self._max_current}")
         self._error_count = 0
         self._error_timestamp_list = []
+        _LOGGER.info(f"read_only: {self._read_only}")
 
         self._device = DeviceInfo(
             name=self._device_name,
@@ -445,8 +459,9 @@ class JuiceboxMQTTHandler:
                 device=self._device,
                 mqtt_settings=self._mqtt_settings,
                 add_error_func=self._add_error,
+                read_only=self._read_only,
             )
-            if entity.entity_type in MQTT_SENDING_ENTITIES:
+            if entity.entity_type in MQTT_SENDING_ENTITIES and not self._read_only:
                 entity.add_kwargs(mitm_handler=self._mitm_handler)
 
     def get_entity(self, name):
@@ -458,6 +473,8 @@ class JuiceboxMQTTHandler:
         # while self._error_count < MAX_ERROR_COUNT:
         mqtt_task_list = []
         for entity in self._entities.values():
+            if self._read_only and entity.entity_type in MQTT_SENDING_ENTITIES:
+                continue
             if entity.experimental is False or self._experimental is True:
                 mqtt_task_list.append(asyncio.create_task(entity.start()))
         await asyncio.gather(
@@ -471,7 +488,7 @@ class JuiceboxMQTTHandler:
     async def set_mitm_handler(self, mitm_handler):
         self._mitm_handler = mitm_handler
         for entity in self._entities.values():
-            if entity.entity_type in MQTT_SENDING_ENTITIES:
+            if entity.entity_type in MQTT_SENDING_ENTITIES and not self._read_only:
                 entity.add_kwargs(mitm_handler=mitm_handler)
 
     async def _udp_mitm_oserror_message_parse(self, data):

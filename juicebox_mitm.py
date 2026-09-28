@@ -31,6 +31,7 @@ class JuiceboxMITM:
         mqtt_handler=None,
         loglevel=None,
         reuse_port=True,
+        passive_monitor=False,
     ):
         if loglevel is not None:
             _LOGGER.setLevel(loglevel)
@@ -42,6 +43,7 @@ class JuiceboxMITM:
         self._remote_mitm_handler = remote_mitm_handler
         self._mqtt_handler = mqtt_handler
         self._reuse_port = reuse_port
+        self._passive_monitor = passive_monitor
         self._loop = asyncio.get_running_loop()
         self._mitm_loop_task: asyncio.Task = None
         self._sending_lock = asyncio.Lock()
@@ -218,7 +220,9 @@ class JuiceboxMITM:
 
             data = await self._local_mitm_handler(data, decoded_message)
 
-            if self._ignore_enelx:
+            if self._passive_monitor:
+                _LOGGER.debug("JuiceboxMITM passive monitor: telemetry observed without forwarding or replying")
+            elif self._ignore_enelx:
                 # Keep sending responses to local juicebox like the enelx servers using last values
                 # the responses should be send only to valid JuiceboxStatusMessages
                 if isinstance(decoded_message, JuiceboxStatusMessage):
@@ -237,7 +241,7 @@ class JuiceboxMITM:
                     )
                     await self._add_error()
         elif self._juicebox_addr is not None and from_addr == self._enelx_addr:
-            if not self._ignore_enelx:
+            if not self._ignore_enelx and not self._passive_monitor:
                 data = await self._remote_mitm_handler(data)
                 try:
                     await self.send_data(data, self._juicebox_addr)

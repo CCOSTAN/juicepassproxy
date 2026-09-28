@@ -19,6 +19,10 @@ Builds upon work by lovely folks in this issue: https://github.com/home-assistan
 
 * If `UPDATE_UDPC` is true, JuicePass Proxy will continually update the JuiceBox via telnet to send its data to JuicePass Proxy. Use this if you are not able to change your DNS to route the JuiceBox traffic to JuicePass Proxy.
 
+* The Docker image defaults to `READ_ONLY=true`, which publishes sensor entities and disables MQTT command controls. Set it to `false` only when you need command-capable behavior.
+
+* Set `PASSIVE_MONITOR=true` with `READ_ONLY=true` and `IGNORE_ENELX=true` to publish charger telemetry without sending UDP replies or forwarding vendor traffic. Passive monitoring cannot be combined with `UPDATE_UDPC=true`.
+
 ### Instructions
 
 1. Pick One Option:
@@ -100,6 +104,8 @@ Variable | Required | Description & Default |
 -- | -- | --
 **JUICEBOX_HOST** | **Recommended**</br></br>**Required if Update UDPC is True.** | If defined, will attempt to get the EnelX Server Name, IP, and Port using telnet.
 **UPDATE_UDPC** | No | Default: false. If true, will continually update the JuiceBox via telnet to point to JuicePass Proxy.
+**READ_ONLY** | No | Default: true in this image. If true, publishes sensors only and disables MQTT command controls.
+**PASSIVE_MONITOR** | No | Default: false. Requires `READ_ONLY=true` and `IGNORE_ENELX=true`; drops charger/vendor packets after observing charger telemetry.
 **TELNET_TIMEOUT** | No | Default: 30. Timeout in seconds for telnet operations.
 **JPP_HOST**  | **Required if Update UDPC is True** |  This is the IP or Hostname of the machine where JuicePass Proxy is running (**not** the IP of the Docker Container)
 **MQTT_HOST** | No | 127.0.0.1

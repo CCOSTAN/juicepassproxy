@@ -70,6 +70,18 @@ As of November, 2023: juicenet-udp-prod3-usa.enelx.com = 54.161.185.130.
 """
 
 
+def mode_validation_error(args):
+    if args.read_only and args.update_udpc:
+        return "--read_only cannot be combined with --update_udpc."
+    if args.passive_monitor and not args.read_only:
+        return "--passive_monitor requires --read_only so MQTT command controls remain disabled."
+    if args.passive_monitor and not args.ignore_enelx:
+        return "--passive_monitor requires --ignore_enelx so cloud forwarding is explicitly disabled."
+    if args.read_only and args.ignore_enelx and not args.passive_monitor:
+        return "--read_only cannot be combined with --ignore_enelx because local-server mode generates charger responses."
+    return None
+
+
 async def get_local_ip():
     try:
         loop = asyncio.get_running_loop()
@@ -297,6 +309,18 @@ async def parse_args():
     )
 
     parser.add_argument(
+        "--read_only",
+        action="store_true",
+        help="Publish sensor entities only and disable all MQTT command callbacks.",
+    )
+
+    parser.add_argument(
+        "--passive_monitor",
+        action="store_true",
+        help="Publish charger telemetry without forwarding to EnelX or sending any response to the charger. Requires --read_only.",
+    )
+
+    parser.add_argument(
         "--tp",
         "--telnet_port",
         dest="telnet_port",
@@ -359,6 +383,9 @@ async def parse_args():
 
 async def main():
     args = await parse_args()
+    if validation_error := mode_validation_error(args):
+        _LOGGER.error(f"Exiting: {validation_error}")
+        sys.exit(2)
     log_handlers = [ logging.StreamHandler() ]
     enable_file_log = (len(args.log_loc) > 0) and (args.log_loc != 'none')
     log_loc = Path(args.log_loc)
@@ -515,6 +542,10 @@ async def main():
 
     experimental = args.experimental
     _LOGGER.info(f"experimental: {experimental}")
+    read_only = args.read_only
+    _LOGGER.info(f"read_only: {read_only}")
+    passive_monitor = args.passive_monitor
+    _LOGGER.info(f"passive_monitor: {passive_monitor}")
 
     # Remove DST and SRC from Config as they have been replaced by ENELX_IP and LOCAL_IP respectively
     config.pop("DST")
@@ -544,6 +575,7 @@ async def main():
             config=config,
             experimental=experimental,
             loglevel=_LOGGER.getEffectiveLevel(),
+            read_only=read_only,
         )
         jpp_task_list.append(
             asyncio.create_task(mqtt_handler.start(), name="mqtt_handler")
@@ -553,6 +585,7 @@ async def main():
             jpp_addr=local_addr,  # Local/Docker IP
             enelx_addr=enelx_addr,  # EnelX IP
             ignore_enelx=ignore_enelx,
+            passive_monitor=passive_monitor,
             loglevel=_LOGGER.getEffectiveLevel(),
             # windows users are having trouble with reuse_port=True
             # TODO find a safe way to detect windows and change the default value
